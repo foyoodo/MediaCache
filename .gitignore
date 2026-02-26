@@ -66,5 +66,4 @@ DerivedData/
 graph.dot
 Derived/
 
-### Tuist managed dependencies ###
-Demo/Tuist/.build
+.build/
