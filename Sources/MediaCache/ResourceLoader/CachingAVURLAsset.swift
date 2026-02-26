@@ -17,6 +17,8 @@ public final class CachingAVURLAsset: AVURLAsset, @unchecked Sendable {
 extension ResourceLoader {
 
     public func asset() -> AVURLAsset {
+        MediaManager.default.retainStream(of: media)
+
         let asset = CachingAVURLAsset(
             url: media.url.replacingScheme(with: "mediacaching"),
             options: nil

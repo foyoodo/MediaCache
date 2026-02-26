@@ -3,8 +3,8 @@ import UniformTypeIdentifiers
 
 final class SessionDelegate: NSObject, @unchecked Sendable {
 
-    var getTask: ((TaskContext) -> SessionDataTask?)!
-    var removeTask: ((TaskContext) -> Void)!
+    var getTask: ((URLSessionTask) -> SessionDataTask?)!
+    var removeTask: ((URLSessionTask) -> Void)!
 }
 
 // MARK: - URLSessionDataDelegate
@@ -16,19 +16,19 @@ extension SessionDelegate: URLSessionDataDelegate {
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
-        guard let context = task.taskContext,
-              let dataTask = getTask(context)
-        else { return }
+        guard let dataTask = getTask(task) else { return }
 
         dataTask.didComplete()
 
         if let error {
             dataTask.continuation?.resume(throwing: error)
+            dataTask.continuation = nil
         }
 
         dataTask.dataContinuation?.finish(throwing: error)
+        dataTask.dataContinuation = nil
 
-        removeTask(context)
+        removeTask(task)
     }
 
     func urlSession(
@@ -37,9 +37,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         didReceive response: URLResponse
     ) async -> URLSession.ResponseDisposition
     {
-        guard let context = dataTask.taskContext,
-              let task = getTask(context)
-        else { return .cancel }
+        guard let task = getTask(dataTask) else { return .cancel }
 
         guard let continuation = task.continuation else { return .allow }
 
@@ -61,6 +59,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         )
 
         continuation.resume(returning: contentInfo)
+        task.continuation = nil
 
         return .allow
     }
@@ -70,9 +69,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
-        guard let context = dataTask.taskContext,
-              let task = getTask(context)
-        else { return }
+        guard let task = getTask(dataTask) else { return }
 
         task.didReceive(data: data)
     }

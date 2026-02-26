@@ -61,7 +61,9 @@ final class DataLoader: NSObject, ResourceDataLoader, @unchecked Sendable {
                     loadingRequest.finishLoading(with: error)
                 }
             }
-            tasks.removeValue(forKey: loadingRequest)
+            queue.async {
+                self.tasks.removeValue(forKey: loadingRequest)
+            }
         }
 
         tasks[loadingRequest] = task

@@ -17,9 +17,7 @@ final class MediaTask: @unchecked Sendable {
 
     private var cache: (any Cache)?
 
-    private var refCount: Int = 1
-
-    private var sessionTasks: [TaskContext: SessionDataTask] = [:]
+    private var sessionTasks: [Int: SessionDataTask] = [:]
 
     private let lock = NSLock()
 
@@ -33,36 +31,26 @@ final class MediaTask: @unchecked Sendable {
         self.cache = cache
     }
 
-    func increment() {
+    func task(for task: URLSessionTask) -> SessionDataTask? {
         lock.lock()
         defer { lock.unlock() }
-        refCount += 1
+        return sessionTasks[task.taskIdentifier]
     }
 
-    func decrement() -> Int {
+    func removeTask(for task: URLSessionTask) {
         lock.lock()
         defer { lock.unlock() }
-        refCount -= 1
-        return refCount
-    }
-
-    func task(for context: TaskContext) -> SessionDataTask? {
-        lock.lock()
-        defer { lock.unlock() }
-        return sessionTasks[context]
-    }
-
-    func removeTask(for context: TaskContext) {
-        lock.lock()
-        defer { lock.unlock() }
-        sessionTasks[context] = nil
-
+        sessionTasks[task.taskIdentifier] = nil
     }
 
     func cancel() {
         lock.lock()
         defer { lock.unlock() }
-        sessionTasks.forEach { $0.value.cancel() }
+        sessionTasks.forEach {
+            $0.value.continuation?.resume(throwing: CancellationError())
+            $0.value.dataContinuation?.finish(throwing: CancellationError())
+            $0.value.cancel()
+        }
         sessionTasks.removeAll()
     }
 
@@ -151,7 +139,7 @@ final class MediaTask: @unchecked Sendable {
         var urlRequest = resolvedContext.urlRequest
         urlRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         let sessionTask = session.dataTask(with: urlRequest)
-        sessionTask.taskContext = resolvedContext
+        sessionTask.taskDescription = media.cacheKey
 
         let task = SessionDataTask(
             task: sessionTask,
@@ -162,7 +150,7 @@ final class MediaTask: @unchecked Sendable {
         task.dataContinuation = dataContinuation
 
         lock.lock()
-        sessionTasks[resolvedContext] = task
+        sessionTasks[sessionTask.taskIdentifier] = task
         lock.unlock()
 
         task.resume()

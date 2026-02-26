@@ -5,6 +5,7 @@ open class MediaManager: @unchecked Sendable {
     public static let `default` = MediaManager()
 
     private var tasks: [String: MediaTask] = [:]
+    private var taskRefCounts: [String: Int] = [:]
 
     private let session: URLSession
 
@@ -20,16 +21,23 @@ open class MediaManager: @unchecked Sendable {
             delegateQueue: nil
         )
 
-        sessionDelegate.getTask = { [weak self] context in
-            self?.task(of: context.media)?.task(for: context)
+        sessionDelegate.getTask = { [weak self] sessionTask in
+            guard let cacheKey = sessionTask.taskDescription else { return nil }
+            return self?.task(forCacheKey: cacheKey)?.task(for: sessionTask)
         }
-        sessionDelegate.removeTask = { [weak self] context in
-            self?.task(of: context.media)?.removeTask(for: context)
+        sessionDelegate.removeTask = { [weak self] sessionTask in
+            guard let cacheKey = sessionTask.taskDescription else { return }
+            self?.task(forCacheKey: cacheKey)?.removeTask(for: sessionTask)
         }
     }
 
+    func retainStream(of media: Media) {
+        lock.lock()
+        defer { lock.unlock() }
+        taskRefCounts[media.cacheKey, default: 0] += 1
+    }
+
     open func retrieveContentInfo(of media: Media) async throws -> ContentInfo {
-        task(of: media)?.cancel()
         return try await addTask(for: media).getContentInfo()
     }
 
@@ -37,10 +45,10 @@ open class MediaManager: @unchecked Sendable {
         try await addTask(for: context.media).getData(using: context)
     }
 
-    private func task(of media: Media) -> MediaTask? {
+    private func task(forCacheKey cacheKey: String) -> MediaTask? {
         lock.lock()
         defer { lock.unlock() }
-        return tasks[media.cacheKey]
+        return tasks[cacheKey]
     }
 
     private func addTask(for media: Media) -> MediaTask {
@@ -48,7 +56,6 @@ open class MediaManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         if let task = tasks[media.cacheKey] {
-            task.increment()
             return task
         }
 
@@ -58,13 +65,19 @@ open class MediaManager: @unchecked Sendable {
     }
 
     public func removeStream(of media: Media) {
-        guard let task = task(of: media) else { return }
+        lock.lock()
+        let cacheKey = media.cacheKey
 
-        if task.decrement() == 0 {
-            task.cancel()
-            lock.lock()
-            tasks.removeValue(forKey: media.cacheKey)
+        if let count = taskRefCounts[cacheKey], count > 1 {
+            taskRefCounts[cacheKey] = count - 1
             lock.unlock()
+            return
         }
+
+        taskRefCounts.removeValue(forKey: cacheKey)
+        let task = tasks.removeValue(forKey: cacheKey)
+        lock.unlock()
+
+        task?.cancel()
     }
 }
