@@ -16,7 +16,7 @@ This file only keeps high-value details needed to safely change the current code
   - Dispatches AVFoundation requests to:
     - `ContentInfoLoader` (metadata)
     - `DataLoader` (byte stream)
-- `MediaManager` (`Sources/MediaCache/MeidaManager.swift`)
+- `MediaManager` (`Sources/MediaCache/MediaManager.swift`)
   - Global coordinator keyed by `Media.cacheKey`
   - Reuses one `MediaTask` per cache key
   - Tracks stream lifecycle with `retainStream` / `removeStream`
@@ -44,4 +44,3 @@ This file only keeps high-value details needed to safely change the current code
 - Prefer `Sources/MediaCache` for implementation work; ignore `Demo/Tuist/.build` noise.
 - Keep these API surfaces stable unless intentionally versioned: `Resource`, `Media`, `ResourceLoader.asset()`.
 - If adding real cache persistence, wire both read and write paths in `MediaTask`.
-- Note: filename is `MeidaManager.swift` (typo), but the type is `MediaManager`.

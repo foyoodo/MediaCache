@@ -58,7 +58,7 @@ Sources/MediaCache
 ├── Networking/        # URLSession delegate + chunked data flow
 ├── Cache/             # Cache protocol definitions
 ├── MediaTask.swift    # Per-media task lifecycle and streaming logic
-└── MeidaManager.swift # Global media task manager
+└── MediaManager.swift # Global media task manager
 ```
 
 ## Notes
