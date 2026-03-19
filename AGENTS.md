@@ -1,46 +1,45 @@
-# AGENTS.md
+# CLAUDE.md
 
-This file only keeps high-value details needed to safely change the current codebase.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+swift build          # Build the library
+swift test           # Run all tests
+swift test --filter MediaCacheTests.example  # Run a single test by name
+```
+
+Requires Swift 6.0+. Targets iOS 14+ and macOS 11+.
 
 ## Core model
 
-`MediaCache` is an async streaming pipeline for `AVPlayer`:
+`MediaCache` is an async streaming pipeline for `AVPlayer` built on `AVAssetResourceLoader`:
+- URL scheme is swapped (`https` → `mediacaching`) so AVFoundation triggers the custom resource loader
 - Content info is fetched asynchronously (`retrieveContentInfo`)
-- Media data is streamed asynchronously (`AsyncThrowingStream<Data, Error>`)
-- Persistent cache is an extension point (`Cache` protocol), not a built-in implementation
+- Media data is streamed asynchronously via HTTP range requests (`AsyncThrowingStream<Data, Error>`)
+- Persistent cache is an extension point (`Cache` protocol); no concrete implementation is wired in by default
 
-## Request flow (current)
+## Request flow
 
-- `ResourceLoader` (`Sources/MediaCache/ResourceLoader/ResourceLoader.swift`)
-  - Client entry point used with `asset()`
-  - Dispatches AVFoundation requests to:
-    - `ContentInfoLoader` (metadata)
-    - `DataLoader` (byte stream)
-- `MediaManager` (`Sources/MediaCache/MediaManager.swift`)
-  - Global coordinator keyed by `Media.cacheKey`
-  - Reuses one `MediaTask` per cache key
-  - Tracks stream lifecycle with `retainStream` / `removeStream`
-- `MediaTask` (`Sources/MediaCache/MediaTask.swift`)
-  - Owns per-request `SessionDataTask` objects
-  - Emits `ContentInfo` or async data chunks
-- `SessionDelegate` + `SessionDataTask` + `DataChunk` (`Sources/MediaCache/Networking`)
-  - Converts URLSession callbacks into async outputs
+1. **`ResourceLoader`** (`ResourceLoader/ResourceLoader.swift`) — `AVAssetResourceLoaderDelegate`; client entry point via `ResourceLoader.asset()`; dispatches AVFoundation loading requests to `ContentInfoLoader` or `DataLoader`
+2. **`MediaManager`** (`MediaManager.swift`) — singleton (`MediaManager.default`); owns the shared `URLSession` + `SessionDelegate`; keyed dictionary of `MediaTask` by `cacheKey`; reference-counts stream lifetimes via `retainStream` / `removeStream`
+3. **`MediaTask`** (`MediaTask.swift`) — per-media task owner; holds `SessionDataTask` objects; implements `getContentInfo()` and `getData(using:)` with `withTaskCancellationHandler`; integrates optional `Cache` for read-before-fetch
+4. **`SessionDelegate` + `SessionDataTask` + `DataChunk`** (`Networking/`) — converts `URLSessionDataDelegate` callbacks into async continuations and `AsyncThrowingStream`
 
-## Critical behavior to preserve
+## Critical behaviors to preserve
 
-- Range requests are built in `TaskContext.urlRequest` and always set `Accept-Encoding: identity`.
-- URLSession callback routing is based on `sessionTask.taskDescription = media.cacheKey` (not associated-object `taskContext`).
-- `CachingAVURLAsset` must call `MediaManager.default.removeStream(of:)` in `deinit`, or per-media tasks can leak.
-- `MediaTask.cancel()` must finish pending continuations/streams to avoid hanging awaiters.
-- `MediaTask`, `MediaManager`, loaders use locks/queues with `@unchecked Sendable`; do not assume actor isolation.
+- `Accept-Encoding: identity` is set in `MediaTask.addTask(for:)`, not in `TaskContext.urlRequest`. Always keep it there to prevent content-encoding from breaking range-based byte assembly.
+- URLSession callback routing uses `sessionTask.taskDescription = media.cacheKey` (set in `MediaTask`, looked up in `MediaManager`'s `getTask` closure). Do not change this routing mechanism.
+- `CachingAVURLAsset` calls `MediaManager.default.removeStream(of:)` in `deinit` via an `onDeinit` closure. Removing this causes per-media task leaks.
+- `MediaTask.cancel()` must drain all pending continuations and streams or awaiters will hang indefinitely.
+- All concurrency in `MediaTask`, `MediaManager`, and the loaders is manual (`NSLock`, `DispatchQueue`) with `@unchecked Sendable`. Do not assume actor isolation.
 
-## Current limitations (do not document as finished features)
+## Stable public API surfaces
 
-- `Cache` protocol exists, but no concrete persistent cache implementation is wired in by default.
-- Tests are minimal (`Tests/MediaCacheTests/MediaCacheTests.swift` is mostly scaffold).
+Changes to these require an intentional version bump: `Resource`, `Media`, `ResourceLoader.asset()`.
 
-## Practical guidance for future edits
+## Current limitations
 
-- Prefer `Sources/MediaCache` for implementation work; ignore `Demo/Tuist/.build` noise.
-- Keep these API surfaces stable unless intentionally versioned: `Resource`, `Media`, `ResourceLoader.asset()`.
-- If adding real cache persistence, wire both read and write paths in `MediaTask`.
+- `Cache` protocol exists but no concrete persistent cache is wired in. To add one, wire both the read path (before network fetch) and write path (after receiving chunks) inside `MediaTask`.
+- Tests (`Tests/MediaCacheTests/MediaCacheTests.swift`) are scaffold only — uses Swift Testing framework (`import Testing`) with no real assertions yet.
