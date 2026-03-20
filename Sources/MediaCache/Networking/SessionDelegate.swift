@@ -3,8 +3,8 @@ import UniformTypeIdentifiers
 
 final class SessionDelegate: NSObject, @unchecked Sendable {
 
-    var getTask: ((URLSessionTask) -> SessionDataTask?)!
-    var removeTask: ((URLSessionTask) -> Void)!
+    var getTask: ((URLSessionTask) -> SessionDataTask?)?
+    var removeTask: ((URLSessionTask) -> Void)?
 }
 
 // MARK: - URLSessionDataDelegate
@@ -16,7 +16,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
-        guard let dataTask = getTask(task) else { return }
+        guard let getTask, let dataTask = getTask(task) else { return }
 
         dataTask.didComplete()
 
@@ -28,7 +28,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         dataTask.dataContinuation?.finish(throwing: error)
         dataTask.dataContinuation = nil
 
-        removeTask(task)
+        removeTask?(task)
     }
 
     func urlSession(
@@ -37,7 +37,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         didReceive response: URLResponse
     ) async -> URLSession.ResponseDisposition
     {
-        guard let task = getTask(dataTask) else { return .cancel }
+        guard let getTask, let task = getTask(dataTask) else { return .cancel }
 
         guard let continuation = task.continuation else { return .allow }
 
@@ -69,7 +69,7 @@ extension SessionDelegate: URLSessionDataDelegate {
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
-        guard let task = getTask(dataTask) else { return }
+        guard let getTask, let task = getTask(dataTask) else { return }
 
         task.didReceive(data: data)
     }

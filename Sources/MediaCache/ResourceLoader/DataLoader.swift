@@ -8,9 +8,6 @@ final class DataLoader: NSObject, ResourceDataLoader, @unchecked Sendable {
 
     private let queue: DispatchQueue
 
-    private var dataRequest: AVAssetResourceLoadingDataRequest?
-    private var loadingRequest: AVAssetResourceLoadingRequest?
-
     var tasks: [AVAssetResourceLoadingRequest: Task<(), Never>] = [:]
 
     init(
@@ -30,9 +27,6 @@ final class DataLoader: NSObject, ResourceDataLoader, @unchecked Sendable {
     {
         let requestedOffset = Int(dataRequest.requestedOffset)
         let requestedLength = dataRequest.requestedLength
-
-        self.dataRequest = dataRequest
-        self.loadingRequest = loadingRequest
 
         let task = Task {
             do {

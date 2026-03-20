@@ -26,11 +26,10 @@ final class ContentInfoLoader: NSObject, ResourceContentInformationLoader, @unch
                 let contentInfo = try await MediaManager.default.retrieveContentInfo(of: media)
                 let contentType = contentInfo.mimeType.map { UTType(mimeType: $0)?.identifier } ?? nil
 
-                isByteRangeAccessSupported = contentInfo.isByteRangeAccessSupported
-
                 try Task.checkCancellation()
 
                 queue.async {
+                    self.isByteRangeAccessSupported = contentInfo.isByteRangeAccessSupported
                     contentInformationRequest.contentType = contentType
                     contentInformationRequest.contentLength = contentInfo.contentLength
                     contentInformationRequest.isByteRangeAccessSupported = contentInfo.isByteRangeAccessSupported

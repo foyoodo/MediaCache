@@ -43,3 +43,14 @@ Changes to these require an intentional version bump: `Resource`, `Media`, `Reso
 
 - `Cache` protocol exists but no concrete persistent cache is wired in. To add one, wire both the read path (before network fetch) and write path (after receiving chunks) inside `MediaTask`.
 - Tests (`Tests/MediaCacheTests/MediaCacheTests.swift`) are scaffold only — uses Swift Testing framework (`import Testing`) with no real assertions yet.
+
+## Project structure
+
+```
+Sources/MediaCache
+├── ResourceLoader/    # AVAssetResourceLoader adapter and request routing
+├── Networking/        # URLSession delegate + chunked data flow
+├── Cache/             # Cache protocol definitions
+├── MediaTask.swift    # Per-media task lifecycle and streaming logic
+└── MediaManager.swift # Global media task manager
+```

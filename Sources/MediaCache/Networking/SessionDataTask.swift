@@ -6,15 +6,29 @@ public final class SessionDataTask: @unchecked Sendable {
 
     let context: TaskContext
 
-    var continuation: CheckedContinuation<ContentInfo, Error>?
+    private let lock = NSLock()
 
-    var dataContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+    private var _continuation: CheckedContinuation<ContentInfo, Error>?
+    var continuation: CheckedContinuation<ContentInfo, Error>? {
+        get { lock.withLock { _continuation } }
+        set { lock.withLock { _continuation = newValue } }
+    }
+
+    private var _dataContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+    var dataContinuation: AsyncThrowingStream<Data, Error>.Continuation? {
+        get { lock.withLock { _dataContinuation } }
+        set { lock.withLock { _dataContinuation = newValue } }
+    }
 
     private let chunk: DataChunk
 
-    private var emittedOffset: Int = 0
+    private var _emittedOffset: Int = 0
+    var emittedOffset: Int {
+        get { lock.withLock { _emittedOffset } }
+        set { lock.withLock { _emittedOffset = newValue } }
+    }
 
-    private var isStarted: Bool = false
+    private var _isStarted: Bool = false
 
     var onResponseData: ((Data, Int) -> Void)?
 
@@ -29,13 +43,13 @@ public final class SessionDataTask: @unchecked Sendable {
             chunkSize: context.minChunkSize,
             bufferCapacity: context.maxChunkSize
         )
-        self.emittedOffset = -(cachedData?.count ?? 0)
+        self._emittedOffset = -(cachedData?.count ?? 0)
 
         chunk.onChunk = { [weak self] data in
             guard let self else { return }
-            dataContinuation?.yield(data)
-            onResponseData?(data, context.requestedOffset + emittedOffset)
-            emittedOffset += data.count
+            self.dataContinuation?.yield(data)
+            self.onResponseData?(data, context.requestedOffset + self.emittedOffset)
+            self.emittedOffset += data.count
         }
         cachedData.map(chunk.append(data:))
     }
@@ -49,8 +63,10 @@ public final class SessionDataTask: @unchecked Sendable {
     }
 
     public func resume() {
-        if isStarted { return }
-        isStarted = true
+        lock.lock()
+        defer { lock.unlock() }
+        if _isStarted { return }
+        _isStarted = true
         task.resume()
     }
 

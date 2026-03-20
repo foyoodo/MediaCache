@@ -1,11 +1,17 @@
 import Foundation
 
-actor CancellationSessionTask {
+// Lock-protected box used to hand a SessionDataTask from the synchronous
+// continuation body to the synchronous onCancel closure, with no async hop.
+final class CancellationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _task: SessionDataTask?
 
-    var task: SessionDataTask?
+    func set(_ task: SessionDataTask) {
+        lock.withLock { _task = task }
+    }
 
-    func setTask(_ task: SessionDataTask) {
-        self.task = task
+    func cancel() {
+        lock.withLock { _task }?.cancel()
     }
 }
 
@@ -59,22 +65,17 @@ final class MediaTask: @unchecked Sendable {
             return contentInfo
         }
         let context = TaskContext(media: media, requestedOffset: 0, requestedLength: 2)
-        let task = CancellationSessionTask()
+        let box = CancellationBox()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let sessionTask = addTask(for: context, continuation: continuation)
+                box.set(sessionTask)
                 if Task.isCancelled {
                     sessionTask.cancel()
-                } else {
-                    Task {
-                        await task.setTask(sessionTask)
-                    }
                 }
             }
         } onCancel: {
-            Task {
-                await task.task?.cancel()
-            }
+            box.cancel()
         }
     }
 
@@ -84,7 +85,7 @@ final class MediaTask: @unchecked Sendable {
             length: min(context.requestedLength, context.maxChunkSize),
             of: media
         )
-        let task = CancellationSessionTask()
+        let box = CancellationBox()
         return await withTaskCancellationHandler {
             AsyncThrowingStream<Data, Error>(bufferingPolicy: .bufferingNewest(1)) { continuation in
                 if let cachedData, cachedData.count >= context.minChunkSize || cachedData.count >= context.requestedLength {
@@ -97,18 +98,13 @@ final class MediaTask: @unchecked Sendable {
                     cachedData: cachedData,
                     dataContinuation: continuation
                 )
+                box.set(sessionTask)
                 if Task.isCancelled {
                     sessionTask.cancel()
-                } else {
-                    Task {
-                        await task.setTask(sessionTask)
-                    }
                 }
             }
         } onCancel: {
-            Task {
-                await task.task?.cancel()
-            }
+            box.cancel()
         }
     }
 
